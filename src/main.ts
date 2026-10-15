@@ -4,7 +4,9 @@ import { LoggingInterceptor } from './interceptors/logging.interceptor.js';
 import { HttpExceptionFilter } from './filters/http-exception.filter.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { cors: { origin: "https://localhost:5173/" } });
+
+  app.enableCors();
 
   app.useGlobalFilters(new HttpExceptionFilter());
 

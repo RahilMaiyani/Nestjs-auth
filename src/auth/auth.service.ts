@@ -39,17 +39,18 @@ export class AuthService {
                 password: hashedPassword,
             },
             select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                createdAt: true,
+                id: true
             }
         });
 
         return {
             message: "User Registered successfully",
-            user,
+            user: {
+                id: user.id,
+                email,
+                name,
+                role: "USER",
+            },
         }
     }
 

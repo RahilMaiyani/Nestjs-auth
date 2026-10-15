@@ -6,4 +6,4 @@ import { UserService } from './user.service.js';
   controllers: [UserController],
   providers: [UserService]
 })
-export class UserModule {}
+export class UserModule { }
