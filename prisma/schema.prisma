@@ -17,6 +17,7 @@ model User {
   hashedRefreshToken String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  isActive Boolean @default(true)
 }
 
 enum Role {
