@@ -3,7 +3,7 @@ import { RegisterDto } from './dto/register.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { compare, hash } from 'bcrypt';
+import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto.js';
 import { TokenUser } from '../globel.types.js';
 
@@ -17,24 +17,26 @@ export class AuthService {
     ) { }
 
     async register(registerDto: RegisterDto) {
-        const { email, password, name, role } = registerDto;
+        const { email, password, name } = registerDto;
 
         const existingUser = await this.prismaService.user.findUnique({
-            where: { email }
+            where: { email },
+            select: {
+                role: true
+            }
         });
 
         if (existingUser) {
             throw new ConflictException("User with this email already registered.")
         }
 
-        const hashedPassword = await hash(password, 10);
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = await this.prismaService.user.create({
             data: {
                 email,
                 name,
                 password: hashedPassword,
-                role: role ?? 'user',
             },
             select: {
                 id: true,
@@ -51,17 +53,6 @@ export class AuthService {
         }
     }
 
-    async generateRefreshToken(id: string, email: string, role: string) {
-        return this.jwtService.signAsync({ id, email, role }, {
-            secret: this.configService.get<string>("JWT_REFRESH_SECRET"),
-            expiresIn: '7d'
-        } as JwtSignOptions);
-    }
-
-    async generateAccessToken(id: string, email: string, role: string) {
-        return await this.jwtService.signAsync({ id, email, role });
-    }
-
     async login(loginDto: LoginDto) {
         const { email, password } = loginDto;
 
@@ -72,6 +63,7 @@ export class AuthService {
             select: {
                 id: true,
                 password: true,
+                name: true,
                 role: true,
             }
         });
@@ -80,28 +72,30 @@ export class AuthService {
             throw new UnauthorizedException("Invalid Email or password");
         }
 
-        const isMatch = await compare(password, user.password);
+        const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
             throw new UnauthorizedException("Invalid Email or password");
         }
 
-        const refreshToken = (await this.generateRefreshToken(user.id, email, user.role)).toString();
-        const accessToken = await this.generateAccessToken(user.id, email, user.role);
+        const [refreshToken, accessToken] = await Promise.all([
+            this.generateToken(user.id, email, user.role),
+            this.generateToken(user.id, email, user.role, "ACCESS")
+        ]);
 
-        const hashedRefreshToken = await hash(refreshToken, 10);
+        const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
 
         await this.prismaService.user.update({
             where: { id: user.id },
             data: {
                 hashedRefreshToken
             }
-        })
+        });
 
         return {
             user: {
                 id: user.id,
-                email,
+                name: user.name,
                 role: user.role
             },
             refreshToken,
@@ -109,7 +103,67 @@ export class AuthService {
         }
     }
 
-    async TokenToUser(token: string, tokenType: 'REFRESH' | 'ACCESS' | undefined = "REFRESH") {
+    async refresh(refreshToken: string) {
+
+        if (!refreshToken) {
+            throw new UnauthorizedException("Refresh token is required");
+        }
+        const payload: TokenUser = await this.TokenToUser(refreshToken);
+
+        if (!payload) {
+            throw new UnauthorizedException("Invalid or expired token");
+        }
+
+        const user = await this.prismaService.user.findUnique({
+            where: { id: payload.id },
+            select: {
+                hashedRefreshToken: true,
+            },
+        });
+
+        if (!user || !user.hashedRefreshToken) {
+            throw new UnauthorizedException("Access Denied: Session revoked");
+        }
+
+        const isMatch = await bcrypt.compare(refreshToken, user.hashedRefreshToken);
+
+        if (!isMatch) {
+            throw new UnauthorizedException("Access Denied: Invalid refresh token");
+        }
+
+        const newAccessToken = await this.generateToken(payload.id, payload.email, payload.role, 'ACCESS');
+
+        return {
+            newAccessToken
+        }
+    }
+
+    async logout(id: string) {
+        const isLogged = await this.prismaService.user.findUnique({
+            where: { id },
+            select: { hashedRefreshToken: true }
+        });
+
+        if (!isLogged || !isLogged?.hashedRefreshToken) {
+            throw new ConflictException("User already logged out.")
+        }
+
+        await this.prismaService.user.update({
+            where: { id },
+            data: {
+                hashedRefreshToken: null
+            },
+            select: {
+                id: true
+            }
+        });
+
+        return {
+            message: "Successfully logged out."
+        }
+    }
+
+    async TokenToUser(token: string, tokenType: 'REFRESH' | 'ACCESS' = "REFRESH") {
         try {
             const payload: TokenUser = await this.jwtService.verifyAsync(token, {
                 secret: this.configService.get<string>(`JWT_${tokenType}_SECRET`),
@@ -122,19 +176,12 @@ export class AuthService {
         }
     }
 
-    async refresh(refreshToken: string) {
-        const payload: TokenUser = await this.TokenToUser(refreshToken);
-
-        if (!payload) {
-            throw new UnauthorizedException("Invalid or expired token");
-        }
-
-        const newAccessToken = await this.generateAccessToken(payload.id, payload.email, payload.role);
-
-        return {
-            message: "New Access token generated successfully",
-            newAccessToken
-        }
+    async generateToken(id: string, email: string, role: string, tokenType: "REFRESH" | "ACCESS" = "REFRESH") {
+        return this.jwtService.signAsync({ id, email, role }, {
+            secret: this.configService.get<string>(`JWT_${tokenType}_SECRET`),
+            expiresIn: tokenType === 'REFRESH' ? '7d' : '15m',
+        } as JwtSignOptions);
     }
+
 
 }

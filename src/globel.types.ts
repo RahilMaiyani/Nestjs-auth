@@ -1,5 +1,5 @@
-export class TokenUser {
+export interface TokenUser {
     id: string;
     email: string;
-    role: 'user' | 'admin';
+    role: 'USER' | 'ADMIN';
 }
