@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAdminDto } from './dto/create-admin.dto.js';
 import * as bcrypt from 'bcrypt';
+import { IsInt } from 'class-validator';
 
 @Injectable()
 export class UserService {
@@ -94,14 +95,15 @@ export class UserService {
 
         let pageNumber = parseInt(page);
         const message = [];
-        if (typeof pageNumber !== 'number') {
-            pageNumber = 1;
-            message.push(" | Invalid Page number");
+
+        if (!['ADMIN', 'USER', 'admin', 'user', 'a', 'u', ""].includes(role)) {
+            role = '';
+            message.push("Invalid role value choose ['ADMIN', 'USER', 'admin', 'user', 'a', 'u'].");
         }
 
-        if (!['', 'admin', 'user', 'a', 'u'].includes(role)) {
-            role = '';
-            message.push(" | Invalid role value choose ['admin', 'user', 'a', 'u'].");
+        let filterRole: "USER" | "ADMIN" = "USER";
+        if (role[0] == 'a' || role[0] == 'A') {
+            filterRole = "ADMIN";
         }
 
         const skip = (pageNumber - 1) * (limit);
@@ -110,38 +112,34 @@ export class UserService {
 
         if (pageNumber > totalPage) {
             pageNumber = 1;
-            message.push(" | Page not exists");
+            message.push(" Page not exists");
         }
 
         const [users, filterTotalCount] = await Promise.all([
             this.prismaService.user.findMany({
                 where: {
-                    email: { contains: search }
+                    email: { contains: search }, role: filterRole,
                 },
                 skip,
                 take: limit
             }),
             this.prismaService.user.count({
                 where: {
-                    email: { contains: search }
+                    email: { contains: search }, role: filterRole,
                 },
             })
         ]);
 
         return {
             totalUsers,
+            filteredTotalUserCount: filterTotalCount,
             totalPage,
             pageNumber,
-            limit,
-            hasNextPage: pageNumber < totalPage,
-            filteredTotalUserCount: filterTotalCount,
             users,
+            hasNextPage: pageNumber < totalPage,
+            limit,
             message: message.join(),
         }
-
-
-
-
 
     }
 
