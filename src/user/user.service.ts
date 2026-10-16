@@ -89,16 +89,14 @@ export class UserService {
         if (!search) {
             search = '';
         }
-        if (!role) {
-            role = '';
-        }
 
         let pageNumber = parseInt(page);
-        const message = [];
+        const note = [];
+
 
         if (!['ADMIN', 'USER', 'admin', 'user', 'a', 'u', ""].includes(role)) {
             role = '';
-            message.push("Invalid role value choose ['ADMIN', 'USER', 'admin', 'user', 'a', 'u'].");
+            note.push("Invalid role value choose ['ADMIN', 'USER', 'admin', 'user', 'a', 'u'].");
         }
 
         let filterRole: "USER" | "ADMIN" = "USER";
@@ -112,10 +110,12 @@ export class UserService {
 
         if (pageNumber > totalPage) {
             pageNumber = 1;
-            message.push(" Page not exists");
+            note.push(" Page not exists");
         }
+        let users, filterTotalCount;
 
-        const [users, filterTotalCount] = await Promise.all([
+
+        [users, filterTotalCount] = await Promise.all([
             this.prismaService.user.findMany({
                 where: {
                     email: { contains: search }, role: filterRole,
@@ -130,6 +130,13 @@ export class UserService {
             })
         ]);
 
+        if (!role || role === "") {
+            users = await this.prismaService.user.findMany({
+                where: { email: { contains: search } }
+            });
+            filterTotalCount = users.length;
+        }
+
         return {
             totalUsers,
             filteredTotalUserCount: filterTotalCount,
@@ -138,7 +145,7 @@ export class UserService {
             users,
             hasNextPage: pageNumber < totalPage,
             limit,
-            message: message.join(),
+            note: note.join(),
         }
 
     }
