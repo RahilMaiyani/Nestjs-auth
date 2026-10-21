@@ -19,18 +19,19 @@ export class AuthService {
     async register(registerDto: RegisterDto) {
         const { email, password, name } = registerDto;
 
-        const existingUser = await this.prismaService.user.findUnique({
-            where: { email },
-            select: {
-                role: true
-            }
-        });
+        const [existingUser, hashedPassword] = await Promise.all([
+            this.prismaService.user.findUnique({
+                where: { email },
+                select: {
+                    role: true
+                }
+            }),
+            bcrypt.hash(password, 10)]);
 
         if (existingUser) {
             throw new ConflictException("User with this email already registered.")
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
 
         const user = await this.prismaService.user.create({
             data: {
@@ -76,6 +77,10 @@ export class AuthService {
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
+            await this.prismaService.user.update({
+                where: { email },
+                data: { hashedRefreshToken: null },
+            });
             throw new UnauthorizedException("Invalid Email or password");
         }
 
@@ -126,13 +131,15 @@ export class AuthService {
             throw new UnauthorizedException("Access Denied: Session revoked");
         }
 
-        const isMatch = await bcrypt.compare(refreshToken, user.hashedRefreshToken);
+        const [isMatch, newAccessToken] = await Promise.all([
+            bcrypt.compare(refreshToken, user.hashedRefreshToken),
+            this.generateToken(payload.id, payload.email, payload.role, 'ACCESS')
+        ]);
 
         if (!isMatch) {
             throw new UnauthorizedException("Access Denied: Invalid refresh token");
         }
 
-        const newAccessToken = await this.generateToken(payload.id, payload.email, payload.role, 'ACCESS');
 
         return {
             newAccessToken
@@ -206,19 +213,22 @@ export class AuthService {
             select: { password: true }
         });
 
-        const isOldPasswordMatch = await bcrypt.compare(oldPassword, currentUser?.password!);
+        const [isOldPasswordMatch, hashedNewPassword] = await Promise.all([
+            bcrypt.compare(oldPassword, currentUser?.password!),
+            bcrypt.hash(newPassword, 10)
+        ]);
 
         if (!isOldPasswordMatch) {
             throw new BadRequestException("Invalid Old Password.")
         }
 
-        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-        const update = await this.prismaService.user.update({
+        await this.prismaService.user.update({
             where: { id: user.id, email: user.email, role: user.role },
             data: {
                 password: hashedNewPassword
-            }
+            },
+            select: { id: true }
         });
 
         return {
