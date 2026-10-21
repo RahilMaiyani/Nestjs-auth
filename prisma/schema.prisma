@@ -14,10 +14,25 @@ model User {
   password String
   name String
   role Role @default(USER)
+  isActive Boolean @default(true)
   hashedRefreshToken String?
+
+  isTwoFactorEnabled Boolean @default(false)
+  twoFactorSecret String?
+  recoveryCodes RecoveryCode[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  isActive Boolean @default(true)
+}
+
+model RecoveryCode {
+  id String @id @default(uuid())
+  codeHash String
+  used Boolean @default(false)
+  usedAt DateTime?
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 enum Role {

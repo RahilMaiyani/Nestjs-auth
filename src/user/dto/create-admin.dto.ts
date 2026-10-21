@@ -13,5 +13,6 @@ export class CreateAdminDto {
 
     @IsString()
     @IsNotEmpty()
+    @MinLength(3, { message: "Minimum name length should be 3 characters." })
     name: string;
 }

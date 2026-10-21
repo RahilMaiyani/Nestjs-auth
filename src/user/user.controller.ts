@@ -6,6 +6,7 @@ import { AdminGuard } from '../guards/admin.guard.js';
 import { minutes, Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../decorators/current-user.decorator.js';
 import type { TokenUser } from '../global.types.js';
+import { UpdateUserDto } from './dto/update-user.dto.js';
 
 @Controller('user')
 @UseGuards(JwtAuthGuard)
@@ -35,5 +36,10 @@ export class UserController {
     @Get('me')
     getMe(@CurrentUser() user: TokenUser) {
         return this.userService.getMe(user);
+    }
+
+    @Post('update')
+    updateMe(@CurrentUser() user: TokenUser, @Body() updateUserDto: UpdateUserDto) {
+        return this.userService.updateMe(user, updateUserDto);
     }
 }

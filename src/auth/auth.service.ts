@@ -6,6 +6,9 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto.js';
 import { TokenUser } from '../global.types.js';
+import { toDataURL } from 'qrcode';
+import * as crypto from 'crypto';
+import { generateSecret, generateURI, verify } from 'otplib';
 
 @Injectable()
 export class AuthService {
@@ -54,6 +57,16 @@ export class AuthService {
         }
     }
 
+    async generatePreAuthToken(id: string, email: string) {
+        return this.jwtService.signAsync(
+            { id, email, is2FAPending: true },
+            {
+                secret: this.configService.get<string>("JWT_MFA_SECRET"),
+                expiresIn: '5m',
+            } as JwtSignOptions
+        )
+    }
+
     async login(loginDto: LoginDto) {
         const { email, password } = loginDto;
 
@@ -67,6 +80,7 @@ export class AuthService {
                 name: true,
                 role: true,
                 isActive: true,
+                isTwoFactorEnabled: true,
             }
         });
 
@@ -82,6 +96,16 @@ export class AuthService {
 
         if (!isMatch) {
             throw new UnauthorizedException("Invalid Email or password");
+        }
+
+        if (user.isTwoFactorEnabled) {
+            const preAuthToken = await this.generatePreAuthToken(user.id, email);
+
+            return {
+                require2FA: true,
+                message: "Two-Factor Authentication code required",
+                preAuthToken,
+            }
         }
 
         const [refreshToken, accessToken] = await Promise.all([
@@ -103,6 +127,200 @@ export class AuthService {
                 id: user.id,
                 name: user.name,
                 role: user.role
+            },
+            refreshToken,
+            accessToken,
+        }
+    }
+
+    async generate2FA(userId: string, email: string) {
+        const user = await this.prismaService.user.findUnique({
+            where: { id: userId },
+            select: { isTwoFactorEnabled: true },
+        });
+
+        if (user?.isTwoFactorEnabled) {
+            throw new BadRequestException("@FA is already enabled open this account.");
+        }
+
+        const secret = generateSecret();
+
+        const appname = this.configService.get<string>("MFA_APP_NAME", "AuthAPI");
+        const otpauthUrl = generateURI({
+            issuer: appname,
+            label: email,
+            secret,
+        });
+
+        const qrCodeDataUrl = await toDataURL(otpauthUrl);
+
+        await this.prismaService.user.update({
+            where: { id: userId },
+            data: { twoFactorSecret: secret },
+        });
+
+        return {
+            secret,
+            qrCode: qrCodeDataUrl,
+            message: "Scan the QR code in Authenticator app like Google Authenticator or Authy, then verify with /auth/2fa/enable",
+        }
+    }
+
+    async enable2FA(userId: string, code: string) {
+        if (!code) {
+            throw new BadRequestException("Verification code is required");
+        }
+
+        const user = await this.prismaService.user.findUnique({
+            where: { id: userId },
+            select: {
+                twoFactorSecret: true,
+                isTwoFactorEnabled: true,
+            },
+        });
+
+        if (!user || !user.twoFactorSecret) {
+            throw new BadRequestException("Please generate 2FA secret first via /auth/2fs/generate")
+        }
+
+        if (user.isTwoFactorEnabled) {
+            throw new BadRequestException("2FA is already enabled.");
+        }
+
+        const result = await verify({
+            secret: user.twoFactorSecret,
+            token: code,
+        });
+
+        if (!result.valid) {
+            throw new UnauthorizedException("Invalid 2FA code. Please enter the current code from your authenticator app.");
+        }
+
+        const rawRecoveryCodes: string[] = [];
+        for (let i = 0; i < 8; i++) {
+            const part1 = crypto.randomBytes(2).toString('hex');
+            const part2 = crypto.randomBytes(3).toString('hex');
+            rawRecoveryCodes.push(`${part1}-${part2}`);
+        }
+
+        const hashedCodes = await Promise.all(
+            rawRecoveryCodes.map(async (rawCode) => {
+                const codeHash = await bcrypt.hash(rawCode, 10);
+                return {
+                    userId,
+                    codeHash,
+                }
+            })
+        );
+
+        await this.prismaService.$transaction([
+            this.prismaService.recoveryCode.deleteMany({ where: { userId } }),
+            this.prismaService.recoveryCode.createMany({ data: hashedCodes }),
+            this.prismaService.user.update({
+                where: { id: userId },
+                data: { isTwoFactorEnabled: true },
+            }),
+        ]);
+
+        return {
+            message: "2FA successfully enabled! Save your recovery codes in safe place. They will only be show once.",
+            recoveryCodes: rawRecoveryCodes,
+        }
+    }
+
+    async authenticate2FA(preAuthToken: string, code: string) {
+        if (!preAuthToken || !code) {
+            throw new BadRequestException("preAuthToken and 2FA code are required");
+        }
+
+        let payload: { id: string, email: string, is2FAPending?: boolean };
+        try {
+            payload = await this.jwtService.verifyAsync(preAuthToken, {
+                secret: this.configService.get<string>("JWT_MFA_SECRET"),
+            });
+        }
+        catch {
+            throw new UnauthorizedException("Invalid or expired 2FA session. Please log in again.");
+        }
+
+        const user = await this.prismaService.user.findUnique({
+            where: { id: payload.id },
+            select: {
+                id: true,
+                email: true,
+                role: true,
+                isActive: true,
+                isTwoFactorEnabled: true,
+                twoFactorSecret: true,
+                recoveryCodes: {
+                    where: { used: false },
+                    select: { id: true, codeHash: true },
+                },
+            },
+        });
+
+        if (!user || !user.isActive || !user.isTwoFactorEnabled || !user.twoFactorSecret) {
+            throw new UnauthorizedException("Access Denied: 2FA is not active for this account");
+        }
+
+        let isCodeValid = false;
+        let burnedRecoveryCodeId: string | null = null;
+
+        if (code.length === 6 && /^\d+$/.test(code)) {
+            const result = await verify({
+                secret: user.twoFactorSecret,
+                token: code,
+            });
+            isCodeValid = result.valid;
+        }
+
+        if (!isCodeValid && user.recoveryCodes.length > 0) {
+            for (const rc of user.recoveryCodes) {
+                const isMatch = await bcrypt.compare(code, rc.codeHash);
+                if (isMatch) {
+                    isCodeValid = true;
+                    burnedRecoveryCodeId = rc.id;
+                    break;
+                }
+            }
+        }
+
+        if (!isCodeValid) {
+            throw new UnauthorizedException("Invalid 2FA code or recovery code");
+        }
+
+        const [refreshToken, accessToken] = await Promise.all([
+            this.generateToken(user.id, user.email, user.role, "REFRESH"),
+            this.generateToken(user.id, user.email, user.role, "ACCESS"),
+        ]);
+
+        const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+
+        await this.prismaService.$transaction(async (tx) => {
+            if (burnedRecoveryCodeId) {
+                await tx.recoveryCode.update({
+                    where: { id: burnedRecoveryCodeId },
+                    data: {
+                        used: true,
+                        usedAt: new Date(),
+                    }
+                });
+            }
+
+            await tx.user.update({
+                where: { id: user.id },
+                data: { hashedRefreshToken }
+            });
+        });
+
+        return {
+            message: burnedRecoveryCodeId
+                ? "Logged in using recovery code! Note: That recovery code has now been burned."
+                : "Two-Factor authentication successfull!",
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
             },
             refreshToken,
             accessToken,

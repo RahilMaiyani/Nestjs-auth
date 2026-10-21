@@ -45,4 +45,21 @@ export class AuthController {
     changePassword(@CurrentUser() user: TokenUser, @Body("oldPassword") oldPassword: string, @Body('newPassword') newPassword: string) {
         return this.authService.changePassword(user, oldPassword, newPassword);
     }
+
+    @Post("2fa/generate")
+    @UseGuards(JwtAuthGuard)
+    generate2FA(@CurrentUser() user: TokenUser) {
+        return this.authService.generate2FA(user.id, user.email);
+    }
+
+    @Post("2fa/enable")
+    @UseGuards(JwtAuthGuard)
+    enable2FA(@CurrentUser() user: TokenUser, @Body("code") code: string) {
+        return this.authService.enable2FA(user.id, code);
+    }
+
+    @Post('2fa/authenticate')
+    authenticate2FA(@Body('preAuthToken') preAuthToken: string, @Body('code') code: string) {
+        return this.authService.authenticate2FA(preAuthToken, code);
+    }
 }

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAdminDto } from './dto/create-admin.dto.js';
 import * as bcrypt from 'bcrypt';
 import type { TokenUser } from '../global.types.js';
+import { UpdateUserDto } from './dto/update-user.dto.js';
 
 @Injectable()
 export class UserService {
@@ -132,15 +133,23 @@ export class UserService {
         ]);
 
         if (!role || role === "") {
-            users = await this.prismaService.user.findMany({
-                where: { email: { contains: search } },
-                skip,
-                take: limit,
-                select: {
-                    id: true, email: true, name: true, role: true, createdAt: true, updatedAt: true, isActive: true,
-                }
-            });
-            filterTotalCount = users.length;
+            [users, filterTotalCount] = await Promise.all([
+                this.prismaService.user.findMany({
+                    where: {
+                        email: { contains: search }
+                    },
+                    skip,
+                    take: limit,
+                    select: {
+                        id: true, email: true, name: true, role: true, isActive: true, createdAt: true, updatedAt: true,
+                    }
+                }),
+                this.prismaService.user.count({
+                    where: {
+                        email: { contains: search }
+                    },
+                })
+            ]);
         }
 
         return {
@@ -182,6 +191,31 @@ export class UserService {
                 createdAt,
                 updatedAt,
             }
+        }
+    }
+
+    async updateMe(user: TokenUser, updateUserDto: UpdateUserDto) {
+        const { name } = updateUserDto;
+
+        if (!name) {
+            throw new BadRequestException("No user's name given in body");
+        }
+
+        if (!user) {
+            throw new BadRequestException("Invalid user");
+        }
+
+        await this.prismaService.user.update({
+            where: {
+                id: user.id,
+            },
+            data: {
+                name
+            }
+        });
+
+        return {
+            message: "User details updated successfully."
         }
     }
 }
