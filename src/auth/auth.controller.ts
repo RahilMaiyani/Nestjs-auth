@@ -5,13 +5,16 @@ import { LoginDto } from './dto/login.dto.js';
 import { JwtAuthGuard } from '../guards/jwt.guard.js';
 import { CurrentUser } from '../decorators/current-user.decorator.js';
 import type { TokenUser } from '../globel.types.js';
+import { hours, minutes, Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
+@Throttle({ default: { ttl: minutes(30), limit: 30 } })
 export class AuthController {
 
     constructor(private readonly authService: AuthService) { }
 
     @Post('register')
+    @Throttle({ default: { ttl: hours(1), limit: 5 } })
     register(@Body() registerDto: RegisterDto) {
         return this.authService.register(registerDto);
     }
