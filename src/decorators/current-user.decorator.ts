@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from "@nestjs/common";
-import { TokenUser } from "../globel.types.js";
+import { TokenUser } from "../global.types.js";
 
 export const CurrentUser = createParamDecorator(
     (data: unknown, ctx: ExecutionContext) => {

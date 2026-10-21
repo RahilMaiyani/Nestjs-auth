@@ -4,7 +4,7 @@ import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtAuthGuard } from '../guards/jwt.guard.js';
 import { CurrentUser } from '../decorators/current-user.decorator.js';
-import type { TokenUser } from '../globel.types.js';
+import type { TokenUser } from '../global.types.js';
 import { hours, minutes, Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
@@ -45,6 +45,4 @@ export class AuthController {
     changePassword(@CurrentUser() user: TokenUser, @Body("oldPassword") oldPassword: string, @Body('newPassword') newPassword: string) {
         return this.authService.changePassword(user, oldPassword, newPassword);
     }
-
-
 }

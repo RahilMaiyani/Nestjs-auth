@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Observable } from "rxjs";
 
 @Injectable()

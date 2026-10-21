@@ -5,7 +5,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto.js';
-import { TokenUser } from '../globel.types.js';
+import { TokenUser } from '../global.types.js';
 
 @Injectable()
 export class AuthService {
@@ -31,7 +31,6 @@ export class AuthService {
         if (existingUser) {
             throw new ConflictException("User with this email already registered.")
         }
-
 
         const user = await this.prismaService.user.create({
             data: {
@@ -67,6 +66,7 @@ export class AuthService {
                 password: true,
                 name: true,
                 role: true,
+                isActive: true,
             }
         });
 
@@ -74,13 +74,13 @@ export class AuthService {
             throw new UnauthorizedException("Invalid Email or password");
         }
 
+        if (!user.isActive) {
+            throw new ConflictException("User is Deactivated.")
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
-            await this.prismaService.user.update({
-                where: { email },
-                data: { hashedRefreshToken: null },
-            });
             throw new UnauthorizedException("Invalid Email or password");
         }
 
@@ -140,21 +140,13 @@ export class AuthService {
             throw new UnauthorizedException("Access Denied: Invalid refresh token");
         }
 
-
         return {
             newAccessToken
         }
     }
 
     async logout(id: string) {
-        const isLogged = await this.prismaService.user.findUnique({
-            where: { id },
-            select: { hashedRefreshToken: true }
-        });
-
-        if (!isLogged || !isLogged?.hashedRefreshToken) {
-            throw new ConflictException("User already logged out.")
-        }
+        await this.checkSession(id);
 
         await this.prismaService.user.update({
             where: { id },
@@ -196,7 +188,6 @@ export class AuthService {
         return {
             message: "Session Active",
         }
-
     }
 
     async changePassword(user: TokenUser, oldPassword: string, newPassword: string) {
@@ -209,12 +200,20 @@ export class AuthService {
         }
 
         const currentUser = await this.prismaService.user.findUnique({
-            where: { id: user.id, email: user.email, role: user.role },
-            select: { password: true }
+            where: { id: user.id },
+            select: { password: true, isActive: true }
         });
 
+        if (!currentUser) {
+            throw new NotFoundException(`User with ID: ${user.id} not found`)
+        }
+
+        if (!currentUser.isActive) {
+            throw new BadRequestException("User is deactivated.")
+        }
+
         const [isOldPasswordMatch, hashedNewPassword] = await Promise.all([
-            bcrypt.compare(oldPassword, currentUser?.password!),
+            bcrypt.compare(oldPassword, currentUser.password),
             bcrypt.hash(newPassword, 10)
         ]);
 
@@ -222,11 +221,11 @@ export class AuthService {
             throw new BadRequestException("Invalid Old Password.")
         }
 
-
         await this.prismaService.user.update({
-            where: { id: user.id, email: user.email, role: user.role },
+            where: { id: user.id },
             data: {
-                password: hashedNewPassword
+                password: hashedNewPassword,
+                hashedRefreshToken: null,
             },
             select: { id: true }
         });
@@ -234,7 +233,6 @@ export class AuthService {
         return {
             message: "Successfully Changed Password."
         }
-
     }
 
     async TokenToUser(token: string, tokenType: 'REFRESH' | 'ACCESS' = "REFRESH") {
@@ -256,6 +254,4 @@ export class AuthService {
             expiresIn: tokenType === 'REFRESH' ? '7d' : '15m',
         } as JwtSignOptions);
     }
-
-
 }

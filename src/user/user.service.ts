@@ -1,8 +1,8 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAdminDto } from './dto/create-admin.dto.js';
 import * as bcrypt from 'bcrypt';
-import { IsInt } from 'class-validator';
+import type { TokenUser } from '../global.types.js';
 
 @Injectable()
 export class UserService {
@@ -93,7 +93,6 @@ export class UserService {
         let pageNumber = parseInt(page);
         const note = [];
 
-
         if (!['ADMIN', 'USER', 'admin', 'user', 'a', 'u', ""].includes(role)) {
             role = '';
             note.push("Invalid role value choose ['ADMIN', 'USER', 'admin', 'user', 'a', 'u'].");
@@ -114,25 +113,32 @@ export class UserService {
         }
         let users, filterTotalCount;
 
-
         [users, filterTotalCount] = await Promise.all([
             this.prismaService.user.findMany({
                 where: {
-                    email: { contains: search }, role: filterRole,
+                    email: { contains: search }, role: filterRole
                 },
                 skip,
-                take: limit
+                take: limit,
+                select: {
+                    id: true, email: true, name: true, role: true, isActive: true, createdAt: true, updatedAt: true,
+                }
             }),
             this.prismaService.user.count({
                 where: {
-                    email: { contains: search }, role: filterRole,
+                    email: { contains: search }, role: filterRole
                 },
             })
         ]);
 
         if (!role || role === "") {
             users = await this.prismaService.user.findMany({
-                where: { email: { contains: search } }
+                where: { email: { contains: search } },
+                skip,
+                take: limit,
+                select: {
+                    id: true, email: true, name: true, role: true, createdAt: true, updatedAt: true, isActive: true,
+                }
             });
             filterTotalCount = users.length;
         }
@@ -147,7 +153,35 @@ export class UserService {
             limit,
             note: note.join(),
         }
-
     }
 
+    async getMe(user: TokenUser) {
+        const { id, email } = user;
+
+        if (!user) {
+            throw new NotFoundException("User not found!");
+        }
+
+        const currentUser = await this.prismaService.user.findUnique({
+            where: { id },
+            select: { name: true, isActive: true, createdAt: true, updatedAt: true }
+        });
+
+        if (!currentUser) {
+            throw new NotFoundException("User not found!");
+        }
+
+        const { name, isActive, createdAt, updatedAt } = currentUser;
+
+        return {
+            user: {
+                id,
+                email,
+                name,
+                isActive,
+                createdAt,
+                updatedAt,
+            }
+        }
+    }
 }
