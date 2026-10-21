@@ -32,4 +32,16 @@ export class AuthController {
         return this.authService.logout(user.id);
     }
 
+    @Post("session")
+    checkSession(@Body('id') id: string) {
+        return this.authService.checkSession(id);
+    }
+
+    @Post("change-password")
+    @UseGuards(JwtAuthGuard)
+    changePassword(@CurrentUser() user: TokenUser, @Body("oldPassword") oldPassword: string, @Body('newPassword') newPassword: string) {
+        return this.authService.changePassword(user, oldPassword, newPassword);
+    }
+
+
 }

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
@@ -162,6 +162,69 @@ export class AuthService {
         return {
             message: "Successfully logged out."
         }
+    }
+
+    async checkSession(id: string) {
+        if (!id) {
+            throw new BadRequestException("Invalid id value.")
+        }
+
+        const user = await this.prismaService.user.findUnique({
+            where: {
+                id,
+            },
+            select: {
+                hashedRefreshToken: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with id: "${id}" does not exist.`);
+        }
+
+        if (!user.hashedRefreshToken) {
+            throw new BadRequestException("No active session found.")
+        }
+
+        return {
+            message: "Session Active",
+        }
+
+    }
+
+    async changePassword(user: TokenUser, oldPassword: string, newPassword: string) {
+        if (!user || !oldPassword || !newPassword) {
+            throw new BadRequestException("Invalid reqest parameter.");
+        }
+
+        if (oldPassword === newPassword) {
+            throw new BadRequestException("New Password should be different from Old one.");
+        }
+
+        const currentUser = await this.prismaService.user.findUnique({
+            where: { id: user.id, email: user.email, role: user.role },
+            select: { password: true }
+        });
+
+        const isOldPasswordMatch = await bcrypt.compare(oldPassword, currentUser?.password!);
+
+        if (!isOldPasswordMatch) {
+            throw new BadRequestException("Invalid Old Password.")
+        }
+
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+        const update = await this.prismaService.user.update({
+            where: { id: user.id, email: user.email, role: user.role },
+            data: {
+                password: hashedNewPassword
+            }
+        });
+
+        return {
+            message: "Successfully Changed Password."
+        }
+
     }
 
     async TokenToUser(token: string, tokenType: 'REFRESH' | 'ACCESS' = "REFRESH") {
