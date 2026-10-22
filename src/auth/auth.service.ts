@@ -156,12 +156,13 @@ export class AuthService {
             secret,
         });
 
-        const qrCodeDataUrl = await toDataURL(otpauthUrl);
-
-        await this.prismaService.user.update({
-            where: { id: userId },
-            data: { twoFactorSecret: secret },
-        });
+        const [qrCodeDataUrl, _] = await Promise.all([
+            toDataURL(otpauthUrl),
+            this.prismaService.user.update({
+                where: { id: userId },
+                data: { twoFactorSecret: secret },
+            }),
+        ]);
 
         return {
             secret,
@@ -350,16 +351,17 @@ export class AuthService {
             throw new BadRequestException("2FA is not enabled on this account");
         }
 
-        const isPasswordMatch = await bcrypt.compare(password, user.password);
+        const [isPasswordMatch, result] = await Promise.all([
+            bcrypt.compare(password, user.password),
+            verify({
+                secret: user.twoFactorSecret,
+                token: code,
+            }),
+        ]);
 
         if (!isPasswordMatch) {
             throw new UnauthorizedException("Invalid Password");
         }
-
-        const result = await verify({
-            secret: user.twoFactorSecret,
-            token: code,
-        });
 
         if (!result.valid) {
             throw new UnauthorizedException("Invalid 2FA code");

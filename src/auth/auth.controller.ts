@@ -36,6 +36,7 @@ export class AuthController {
     }
 
     @Post("session")
+    @Throttle({ default: { limit: 15, ttl: minutes(1) } })
     checkSession(@Body('id') id: string) {
         return this.authService.checkSession(id);
     }

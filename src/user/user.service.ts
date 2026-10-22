@@ -4,6 +4,7 @@ import { CreateAdminDto } from './dto/create-admin.dto.js';
 import * as bcrypt from 'bcrypt';
 import type { TokenUser } from '../global.types.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
+import { Prisma } from '../generated/prisma/browser.js';
 
 @Injectable()
 export class UserService {
@@ -95,9 +96,9 @@ export class UserService {
         let pageNumber = parseInt(page);
         const note = [];
 
-        if (!['admin', 'user', 'a', 'u', ""].includes(role)) {
+        if (!['admin', 'user', 'all', 'a', 'u', ""].includes(role)) {
             role = '';
-            note.push("Invalid role value choose ['admin', 'user', 'a', 'u'].");
+            note.push("Invalid role value choose ['admin', 'user', 'all', 'a', 'u'].");
         }
 
         let filterRole: "USER" | "ADMIN" = "USER";
@@ -106,51 +107,36 @@ export class UserService {
         }
 
         const skip = (pageNumber - 1) * (limit);
-        const totalUsers = await this.prismaService.user.count();
+
+        const where: Prisma.UserWhereInput = {
+            ...(search ? { email: { contains: search } } : {}),
+            role: filterRole || undefined,
+        };
+
+        const [users, filterTotalCount, totalUsers] = await Promise.all([
+            this.prismaService.user.findMany({
+                where,
+                skip,
+                take: limit,
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    role: true,
+                    isActive: true,
+                    createdAt: true,
+                    updatedAt: true,
+                }
+            }),
+            this.prismaService.user.count({ where }),
+            this.prismaService.user.count(),
+        ]);
+
         const totalPage = Math.ceil(totalUsers / limit);
 
         if (pageNumber > totalPage) {
             pageNumber = 1;
             note.push(" Page not exists");
-        }
-        let users, filterTotalCount;
-
-        [users, filterTotalCount] = await Promise.all([
-            this.prismaService.user.findMany({
-                where: {
-                    email: { contains: search }, role: filterRole
-                },
-                skip,
-                take: limit,
-                select: {
-                    id: true, email: true, name: true, role: true, isActive: true, createdAt: true, updatedAt: true,
-                }
-            }),
-            this.prismaService.user.count({
-                where: {
-                    email: { contains: search }, role: filterRole
-                },
-            })
-        ]);
-
-        if (!role || role === "") {
-            [users, filterTotalCount] = await Promise.all([
-                this.prismaService.user.findMany({
-                    where: {
-                        email: { contains: search }
-                    },
-                    skip,
-                    take: limit,
-                    select: {
-                        id: true, email: true, name: true, role: true, isActive: true, createdAt: true, updatedAt: true,
-                    }
-                }),
-                this.prismaService.user.count({
-                    where: {
-                        email: { contains: search }
-                    },
-                })
-            ]);
         }
 
         return {

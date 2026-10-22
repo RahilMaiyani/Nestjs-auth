@@ -23,11 +23,13 @@ export class UserController {
 
     @Post("status/:state/:id")
     @UseGuards(AdminGuard)
+    @Throttle({ default: { limit: 20, ttl: minutes(1) } })
     deactivateUser(@Param('state') state: string, @Param('id') id: string) {
         return this.userService.userStatusChange(id, state);
     }
 
     @Get("all")
+    @Throttle({ default: { limit: 20, ttl: minutes(1) } })
     @UseGuards(AdminGuard)
     getAllusers(@Query('search') search: string, @Query('page') page: string, @Query('role') role: string) {
         return this.userService.getAllUser(search, page, role);
