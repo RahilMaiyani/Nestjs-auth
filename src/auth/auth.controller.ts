@@ -62,4 +62,10 @@ export class AuthController {
     authenticate2FA(@Body('preAuthToken') preAuthToken: string, @Body('code') code: string) {
         return this.authService.authenticate2FA(preAuthToken, code);
     }
+
+    @Post('2fa/disable')
+    @UseGuards(JwtAuthGuard)
+    disable2FA(@CurrentUser() user: TokenUser, @Body('password') password: string, @Body('code') code: string) {
+        return this.authService.disable2FA(user.id, password, code);
+    }
 }

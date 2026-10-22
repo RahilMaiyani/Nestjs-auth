@@ -83,6 +83,7 @@ export class UserService {
 
     async getAllUser(search: string = "", page: string = '1', role: string = "") {
         const limit = 10;
+        role = role.toLowerCase();
 
         if (!page) {
             page = '1';
@@ -94,9 +95,9 @@ export class UserService {
         let pageNumber = parseInt(page);
         const note = [];
 
-        if (!['ADMIN', 'USER', 'admin', 'user', 'a', 'u', ""].includes(role)) {
+        if (!['admin', 'user', 'a', 'u', ""].includes(role)) {
             role = '';
-            note.push("Invalid role value choose ['ADMIN', 'USER', 'admin', 'user', 'a', 'u'].");
+            note.push("Invalid role value choose ['admin', 'user', 'a', 'u'].");
         }
 
         let filterRole: "USER" | "ADMIN" = "USER";
@@ -194,20 +195,16 @@ export class UserService {
         }
     }
 
-    async updateMe(user: TokenUser, updateUserDto: UpdateUserDto) {
+    async updateMe(id: string, updateUserDto: UpdateUserDto) {
         const { name } = updateUserDto;
 
-        if (!name) {
-            throw new BadRequestException("No user's name given in body");
-        }
-
-        if (!user) {
-            throw new BadRequestException("Invalid user");
+        if (!name || !id) {
+            throw new BadRequestException("Invalid inputs");
         }
 
         await this.prismaService.user.update({
             where: {
-                id: user.id,
+                id,
             },
             data: {
                 name

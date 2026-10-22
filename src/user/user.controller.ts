@@ -40,6 +40,6 @@ export class UserController {
 
     @Post('update')
     updateMe(@CurrentUser() user: TokenUser, @Body() updateUserDto: UpdateUserDto) {
-        return this.userService.updateMe(user, updateUserDto);
+        return this.userService.updateMe(user.id, updateUserDto);
     }
 }

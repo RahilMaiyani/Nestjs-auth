@@ -139,8 +139,12 @@ export class AuthService {
             select: { isTwoFactorEnabled: true },
         });
 
-        if (user?.isTwoFactorEnabled) {
-            throw new BadRequestException("@FA is already enabled open this account.");
+        if (!user) {
+            throw new BadRequestException("userId invalid.");
+        }
+
+        if (user.isTwoFactorEnabled) {
+            throw new BadRequestException("2FA is already enabled open this account.");
         }
 
         const secret = generateSecret();
@@ -161,6 +165,7 @@ export class AuthService {
 
         return {
             secret,
+            url: otpauthUrl,
             qrCode: qrCodeDataUrl,
             message: "Scan the QR code in Authenticator app like Google Authenticator or Authy, then verify with /auth/2fa/enable",
         }
@@ -180,7 +185,7 @@ export class AuthService {
         });
 
         if (!user || !user.twoFactorSecret) {
-            throw new BadRequestException("Please generate 2FA secret first via /auth/2fs/generate")
+            throw new BadRequestException("Please generate 2FA secret first via /auth/2fa/generate")
         }
 
         if (user.isTwoFactorEnabled) {
@@ -327,12 +332,66 @@ export class AuthService {
         }
     }
 
+    async disable2FA(userId: string, password: string, code: string) {
+        if (!password || !code) {
+            throw new BadRequestException("Password and 2FA code are required to disable 2FA");
+        }
+
+        const user = await this.prismaService.user.findUnique({
+            where: { id: userId },
+            select: {
+                password: true,
+                twoFactorSecret: true,
+                isTwoFactorEnabled: true,
+            }
+        });
+
+        if (!user || !user.isTwoFactorEnabled || !user.twoFactorSecret) {
+            throw new BadRequestException("2FA is not enabled on this account");
+        }
+
+        const isPasswordMatch = await bcrypt.compare(password, user.password);
+
+        if (!isPasswordMatch) {
+            throw new UnauthorizedException("Invalid Password");
+        }
+
+        const result = await verify({
+            secret: user.twoFactorSecret,
+            token: code,
+        });
+
+        if (!result.valid) {
+            throw new UnauthorizedException("Invalid 2FA code");
+        }
+
+        await this.prismaService.$transaction([
+            this.prismaService.recoveryCode.deleteMany({
+                where: { userId },
+            }),
+            this.prismaService.user.update({
+                where: { id: userId },
+                data: {
+                    isTwoFactorEnabled: false,
+                    twoFactorSecret: null,
+                },
+            }),
+        ]);
+
+        return {
+            message: "Two-Factor authentication has been successfully disabled.",
+        };
+    }
+
     async refresh(refreshToken: string) {
 
         if (!refreshToken) {
             throw new UnauthorizedException("Refresh token is required");
         }
+
         const payload: TokenUser = await this.TokenToUser(refreshToken);
+
+        const expireDateTime = new Date(payload.exp * 1000).toString().split("(")[0].trim().slice(4);
 
         if (!payload) {
             throw new UnauthorizedException("Invalid or expired token");
@@ -359,7 +418,9 @@ export class AuthService {
         }
 
         return {
-            newAccessToken
+            message: "Successfully refreshed the access token",
+            newAccessToken,
+            refreshExpiresAt: expireDateTime,
         }
     }
 
