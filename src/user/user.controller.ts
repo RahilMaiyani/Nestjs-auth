@@ -29,10 +29,10 @@ export class UserController {
     }
 
     @Get("all")
-    @Throttle({ default: { limit: 20, ttl: minutes(1) } })
+    @Throttle({ default: { limit: 30, ttl: minutes(1) } })
     @UseGuards(AdminGuard)
-    getAllusers(@Query('search') search: string, @Query('page') page: string, @Query('role') role: string) {
-        return this.userService.getAllUser(search, page, role);
+    getAllusers(@Query('search') search: string, @Query('page') page: string, @Query('role') role: string, @Query('active') active: string) {
+        return this.userService.getAllUser(search, page, role, active);
     }
 
     @Get('me')

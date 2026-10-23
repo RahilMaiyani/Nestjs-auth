@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import type { TokenUser } from '../global.types.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { Prisma } from '../generated/prisma/browser.js';
+import { isBoolean } from 'class-validator';
 
 @Injectable()
 export class UserService {
@@ -82,7 +83,7 @@ export class UserService {
         }
     }
 
-    async getAllUser(search: string = "", page: string = '1', role: string = "") {
+    async getAllUser(search: string = "", page: string = '1', role: string = "", active: string) {
         const limit = 10;
         role = role.toLowerCase();
 
@@ -101,16 +102,22 @@ export class UserService {
             note.push("Invalid role value choose ['admin', 'user', 'all', 'a', 'u'].");
         }
 
-        let filterRole: "USER" | "ADMIN" = "USER";
+        let filterRole: "USER" | "ADMIN" | undefined;
         if (role[0] == 'a' || role[0] == 'A') {
             filterRole = "ADMIN";
+        }
+        else if (role[0] == 'u' || role[0] == 'U') {
+            filterRole = 'USER';
         }
 
         const skip = (pageNumber - 1) * (limit);
 
+        let Active: boolean | undefined = (active === 'true') ? true : ((active === 'false') ? false : undefined);
+
         const where: Prisma.UserWhereInput = {
             ...(search ? { email: { contains: search } } : {}),
             role: filterRole || undefined,
+            isActive: isBoolean(Active) ? Active : undefined,
         };
 
         const [users, filterTotalCount, totalUsers] = await Promise.all([
