@@ -9,6 +9,7 @@ import { TokenUser } from '../global.types.js';
 import { toDataURL } from 'qrcode';
 import * as crypto from 'crypto';
 import { generateSecret, generateURI, verify } from 'otplib';
+import { Prisma } from '../generated/prisma/client.js';
 
 @Injectable()
 export class AuthService {
@@ -119,6 +120,7 @@ export class AuthService {
             where: { id: user.id },
             data: {
                 hashedRefreshToken,
+                sessionStartAt: new Date(),
                 lastRefreshRequestAt: new Date(),
             }
         });
@@ -316,7 +318,11 @@ export class AuthService {
 
             await tx.user.update({
                 where: { id: user.id },
-                data: { hashedRefreshToken }
+                data: {
+                    hashedRefreshToken,
+                    sessionStartAt: new Date(),
+                    lastRefreshRequestAt: new Date(),
+                }
             });
         });
 
@@ -440,7 +446,8 @@ export class AuthService {
         await this.prismaService.user.update({
             where: { id },
             data: {
-                hashedRefreshToken: null
+                hashedRefreshToken: null,
+                sessionStartAt: null,
             },
             select: {
                 id: true
@@ -515,6 +522,7 @@ export class AuthService {
             data: {
                 password: hashedNewPassword,
                 hashedRefreshToken: null,
+                sessionStartAt: null,
             },
             select: { id: true }
         });
@@ -544,22 +552,26 @@ export class AuthService {
         } as JwtSignOptions);
     }
 
-    async getCurrentSessions(minutes: string = '15') {
-        const min = parseInt(minutes);
+    async getCurrentSessions(min?: number) {
+
+        const where: Prisma.UserWhereInput = {
+            hashedRefreshToken: { not: null },
+            lastRefreshRequestAt: min ? { gte: new Date(Date.now() - (min * 60 * 1000)) } : {},
+        }
+
         const [sessions, totalActiveSessions] = await Promise.all([
             this.prismaService.user.findMany({
-                where: {
-                    hashedRefreshToken: { not: null }, lastRefreshRequestAt: { gte: new Date(Date.now() - (min * 60 * 1000)) }
-                },
+                where,
                 select: {
                     id: true,
                     email: true,
                     role: true,
+                    sessionStartAt: true,
                     lastRefreshRequestAt: true,
                 }
             }),
             this.prismaService.user.count({
-                where: { hashedRefreshToken: { not: null } }
+                where: { hashedRefreshToken: { not: null } },
             })
         ]);
 
@@ -567,8 +579,29 @@ export class AuthService {
             message: totalActiveSessions === 0 ? "No active sessions" : "Fetched all current sessions",
             totalActiveSessions: totalActiveSessions,
             recentMin: min,
-            totalRecentlyRefreshedSessions: sessions.length,
-            recentlyRefreshedSessions: sessions,
+            totalSessions: sessions.length,
+            sessions: sessions.map((s) => {
+                let refreshReq;
+                if (s.lastRefreshRequestAt) {
+                    let mills = new Date().getTime() - s.lastRefreshRequestAt.getTime();
+                    let days = Math.floor(mills / (1000 * 60 * 60 * 24));
+                    let hours = Math.floor(mills / (1000 * 60 * 60)) % 24;
+                    let mins = Math.floor(mills / (1000 * 60)) % 60;
+                    let secs = Math.floor((mills / 1000) % 60);
+
+                    refreshReq = {
+                        lastRefreshTime: s.lastRefreshRequestAt.toString(),
+                        lastRefreshAt: `${days ? days + " Days & " : ""}${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")} ago`,
+                    }
+                }
+                return {
+                    id: s.id,
+                    email: s.email,
+                    role: s.role,
+                    sessionStartAt: s.sessionStartAt?.toString(),
+                    ...refreshReq
+                }
+            }),
         }
     }
 }

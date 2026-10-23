@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -74,6 +74,10 @@ export class AuthController {
     @Get('all/current/sessions')
     @UseGuards(JwtAuthGuard, AdminGuard)
     getAllCurrentSessions(@Query('min') min: string) {
-        return this.authService.getCurrentSessions(min);
+        if (min) {
+            const minutes = parseInt(min);
+            return this.authService.getCurrentSessions(minutes);
+        }
+        return this.authService.getCurrentSessions();
     }
 }

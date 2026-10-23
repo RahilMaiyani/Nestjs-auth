@@ -17,6 +17,7 @@ model User {
   isActive Boolean @default(true)
 
   hashedRefreshToken String?
+  sessionStartAt DateTime?
   lastRefreshRequestAt DateTime?
 
   isTwoFactorEnabled Boolean @default(false)
