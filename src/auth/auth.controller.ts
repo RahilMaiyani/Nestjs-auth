@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../guards/jwt.guard.js';
 import { CurrentUser } from '../decorators/current-user.decorator.js';
 import type { TokenUser } from '../global.types.js';
 import { hours, minutes, Throttle } from '@nestjs/throttler';
+import { AdminGuard } from '../guards/admin.guard.js';
 
 @Controller('auth')
 @Throttle({ default: { ttl: minutes(30), limit: 30 } })
@@ -68,5 +69,11 @@ export class AuthController {
     @UseGuards(JwtAuthGuard)
     disable2FA(@CurrentUser() user: TokenUser, @Body('password') password: string, @Body('code') code: string) {
         return this.authService.disable2FA(user.id, password, code);
+    }
+
+    @Get('all/current/sessions')
+    @UseGuards(JwtAuthGuard, AdminGuard)
+    getAllCurrentSessions(@Query('min') min: string) {
+        return this.authService.getCurrentSessions(min);
     }
 }

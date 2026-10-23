@@ -118,7 +118,8 @@ export class AuthService {
         await this.prismaService.user.update({
             where: { id: user.id },
             data: {
-                hashedRefreshToken
+                hashedRefreshToken,
+                lastRefreshRequestAt: new Date(),
             }
         });
 
@@ -419,6 +420,13 @@ export class AuthService {
             throw new UnauthorizedException("Access Denied: Invalid refresh token");
         }
 
+        await this.prismaService.user.update({
+            where: { id: payload.id },
+            data: {
+                lastRefreshRequestAt: new Date(),
+            },
+        });
+
         return {
             message: "Successfully refreshed the access token",
             newAccessToken,
@@ -534,5 +542,33 @@ export class AuthService {
             secret: this.configService.get<string>(`JWT_${tokenType}_SECRET`),
             expiresIn: tokenType === 'REFRESH' ? '7d' : '15m',
         } as JwtSignOptions);
+    }
+
+    async getCurrentSessions(minutes: string = '15') {
+        const min = parseInt(minutes);
+        const [sessions, totalActiveSessions] = await Promise.all([
+            this.prismaService.user.findMany({
+                where: {
+                    hashedRefreshToken: { not: null }, lastRefreshRequestAt: { gte: new Date(Date.now() - (min * 60 * 1000)) }
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    role: true,
+                    lastRefreshRequestAt: true,
+                }
+            }),
+            this.prismaService.user.count({
+                where: { hashedRefreshToken: { not: null } }
+            })
+        ]);
+
+        return {
+            message: totalActiveSessions === 0 ? "No active sessions" : "Fetched all current sessions",
+            totalActiveSessions: totalActiveSessions,
+            recentMin: min,
+            totalRecentlyRefreshedSessions: sessions.length,
+            recentlyRefreshedSessions: sessions,
+        }
     }
 }

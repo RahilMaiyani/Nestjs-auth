@@ -15,7 +15,9 @@ model User {
   name String
   role Role @default(USER)
   isActive Boolean @default(true)
+
   hashedRefreshToken String?
+  lastRefreshRequestAt DateTime?
 
   isTwoFactorEnabled Boolean @default(false)
   twoFactorSecret String?
