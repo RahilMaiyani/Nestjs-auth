@@ -568,6 +568,9 @@ export class AuthService {
                     role: true,
                     sessionStartAt: true,
                     lastRefreshRequestAt: true,
+                },
+                orderBy: {
+                    lastRefreshRequestAt: 'desc'
                 }
             }),
             this.prismaService.user.count({
@@ -577,7 +580,7 @@ export class AuthService {
 
         return {
             message: totalActiveSessions === 0 ? "No active sessions" : "Fetched all current sessions",
-            totalActiveSessions: totalActiveSessions,
+            totalActiveSessions: min ? totalActiveSessions : undefined,
             recentMin: min,
             totalSessions: sessions.length,
             sessions: sessions.map((s) => {
