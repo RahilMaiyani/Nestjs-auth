@@ -556,7 +556,9 @@ export class AuthService {
 
         const where: Prisma.UserWhereInput = {
             hashedRefreshToken: { not: null },
-            lastRefreshRequestAt: min ? { gte: new Date(Date.now() - (min * 60 * 1000)) } : {},
+            lastRefreshRequestAt: min
+                ? { gte: new Date(Date.now() - (min * 60 * 1000)) }
+                : {},
         }
 
         const [sessions, totalActiveSessions] = await Promise.all([
@@ -579,18 +581,20 @@ export class AuthService {
         ]);
 
         return {
-            message: totalActiveSessions === 0 ? "No active sessions" : "Fetched all current sessions",
+            message: totalActiveSessions === 0
+                ? "No active sessions" :
+                "Fetched all current sessions",
             totalActiveSessions: min ? totalActiveSessions : undefined,
             recentMin: min,
             totalSessions: sessions.length,
             sessions: sessions.map((s) => {
                 let refreshReq;
                 if (s.lastRefreshRequestAt) {
-                    let mills = new Date().getTime() - s.lastRefreshRequestAt.getTime();
-                    let days = Math.floor(mills / (1000 * 60 * 60 * 24));
-                    let hours = Math.floor(mills / (1000 * 60 * 60)) % 24;
-                    let mins = Math.floor(mills / (1000 * 60)) % 60;
-                    let secs = Math.floor((mills / 1000) % 60);
+                    let millseconds = new Date().getTime() - s.lastRefreshRequestAt.getTime();
+                    let days = Math.floor(millseconds / (1000 * 60 * 60 * 24));
+                    let hours = Math.floor(millseconds / (1000 * 60 * 60)) % 24;
+                    let mins = Math.floor(millseconds / (1000 * 60)) % 60;
+                    let secs = Math.floor((millseconds / 1000) % 60);
 
                     refreshReq = {
                         lastRefreshTime: s.lastRefreshRequestAt.toString(),
